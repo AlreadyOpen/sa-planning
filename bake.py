@@ -10,7 +10,7 @@ web maps can use as WGS 84 (they differ by under 2 m). The GDA94 copy in each zi
 index.json: counts (rows per layer, features at zoom 14 per layer) and `sources` (each zip's URL, Last-Modified and size).
 The sources are checked monthly: when no zip has changed since the published index.json, nothing is baked (REBAKE=1 bakes
 anyway). Usage: python3 bake.py [layer ...]   (default: every layer)"""
-import datetime, json, os, re, shutil, subprocess, sys, urllib.error, urllib.request, zipfile
+import datetime, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request, zipfile
 import duckdb
 import sources
 
@@ -33,9 +33,20 @@ MINZOOM, MAXZOOM = 4, 14
 url = lambda layer: f'{BASE}{LAYERS[layer][0]}_geojson.zip'
 
 
+def retry(f, tries=4):
+    """dptiapps once timed out from a runner (2026-10-10) that it had served an hour earlier: try again after 1, 2, 4 min"""
+    for i in range(tries):
+        try: return f()
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500 or i == tries - 1: raise
+            print(f'::warning::{e}; retrying in {60 << i} s', flush=True); time.sleep(60 << i)
+
+
 def head(layer):
-    with urllib.request.urlopen(urllib.request.Request(url(layer), method='HEAD', headers=UA), timeout=120) as r:
-        return {'url': url(layer), 'last_modified': r.headers['Last-Modified'], 'bytes': int(r.headers['Content-Length'])}
+    def get():
+        with urllib.request.urlopen(urllib.request.Request(url(layer), method='HEAD', headers=UA), timeout=120) as r:
+            return {'url': url(layer), 'last_modified': r.headers['Last-Modified'], 'bytes': int(r.headers['Content-Length'])}
+    return retry(get)
 
 
 def published():
@@ -50,8 +61,10 @@ def download(layer, src):
     p = os.path.join(sources.CACHE, os.path.basename(src['url'])); meta = p + '.json'
     if os.path.exists(meta) and json.load(open(meta)) == src and os.path.getsize(p) == src['bytes']:
         return p
-    with urllib.request.urlopen(urllib.request.Request(src['url'], headers=UA), timeout=1800) as r, open(p + '.part', 'wb') as f:
-        shutil.copyfileobj(r, f, 1 << 24)
+    def get():
+        with urllib.request.urlopen(urllib.request.Request(src['url'], headers=UA), timeout=1800) as r, open(p + '.part', 'wb') as f:
+            shutil.copyfileobj(r, f, 1 << 24)
+    retry(get)
     assert os.path.getsize(p + '.part') == src['bytes'], f'{layer}: short download'
     os.replace(p + '.part', p); json.dump(src, open(meta, 'w'))
     return p
