@@ -13,7 +13,7 @@ tags:
 # South Australia planning and land layers
 
 Statewide planning and land layers published by the Department for Housing and Urban Development on Data.SA, as GeoParquet
-and vector tiles, checked monthly and rebuilt when a source changes by
+and vector tiles, checked weekly and rebuilt when a source changes by
 [AlreadyOpen/sa-planning](https://github.com/AlreadyOpen/sa-planning). Every feature and every field of each source is kept.
 
 | Layer | Source | Holds |
@@ -40,7 +40,12 @@ Per layer:
 
 `index.json` holds the counts, each source's URL, Last-Modified and size, and the CRS. `manifest.json` lists every file's
 sha256. Geometry is the GDA2020 (EPSG:7844) file of each source, which web maps can use as WGS 84 (they differ by less than
-2 m); each source zip also has a GDA94 copy of the same features.
+2 m).
+
+**GDA94 copies (Kaggle only).** Each source zip also holds the same features in GDA94 (EPSG:4283). They are not on Hugging
+Face; they are in the Kaggle mirror, [helenkwok/sa-planning](https://www.kaggle.com/datasets/helenkwok/sa-planning), folder
+`gda94/`: each zip's `<stem>_GDA94.geojson` and `<stem>_GDA94_metadata.html`, copied out byte for byte (no reprojection, no
+field changes). `manifest.json` lists their sha256 too, and `index.json` counts their features (`<layer>_gda94`).
 
 ## Sources and terms
 

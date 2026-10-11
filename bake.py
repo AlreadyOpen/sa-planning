@@ -1,6 +1,8 @@
 """South Australia planning and land layers from Data.SA (Department for Housing and Urban Development, CC BY 4.0), as
 GeoParquet and vector tiles. Every feature and every field is kept; geometry is the GDA2020 (EPSG:7844) file of each zip, which
-web maps can use as WGS 84 (they differ by under 2 m). The GDA94 copy in each zip is the same features in the older datum.
+web maps can use as WGS 84 (they differ by under 2 m). The GDA94 copy in each zip is the same features in the older datum:
+  gda94/<stem>_GDA94.geojson (+ its _metadata.html)  copied out of the zip byte for byte (no reprojection, no field changes);
+                      published to Kaggle only (publish.KAGGLE_FILES), counted as <layer>_gda94
   <layer>.parquet     GeoParquet, every feature, every field as published (+ `geom`)
   <layer>.pmtiles     vector tiles, one layer named <layer>, zooms 4 to 14, every field. Zoom 14 holds EVERY feature at full
                       detail (no feature or size limit, no tiny-polygon reduction, no simplification); zooms 4 to 13 may thin
@@ -8,7 +10,7 @@ web maps can use as WGS 84 (they differ by under 2 m). The GDA94 copy in each zi
                       tile sets joined with tile-join; the bake fails unless zoom 14 holds every feature (counted by `fid`,
                       the feature's row number in <layer>.parquet).
 index.json: counts (rows per layer, features at zoom 14 per layer) and `sources` (each zip's URL, Last-Modified and size).
-The sources are checked monthly: when no zip has changed since the published index.json, nothing is baked (REBAKE=1 bakes
+The sources are checked weekly: when no zip has changed since the published index.json, nothing is baked (REBAKE=1 bakes
 anyway). Usage: python3 bake.py [layer ...]   (default: every layer)"""
 import datetime, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request, zipfile
 import duckdb
@@ -80,6 +82,20 @@ def fids(pmtiles, layer, zoom=MAXZOOM):
     return ids
 
 
+def gda94(con, layer, z):
+    """the zip's GDA94 files, byte for byte, into OUT/gda94/; returns (their paths relative to OUT, features in the GeoJSON)"""
+    zf = zipfile.ZipFile(z); names = [n for n in zf.namelist() if '_GDA94' in os.path.basename(n)]
+    gj = [n for n in names if n.endswith('_GDA94.geojson')]
+    assert len(gj) == 1, f'{layer}: expected one *_GDA94.geojson in the zip, found {gj}'
+    os.makedirs(os.path.join(sources.OUT, 'gda94'), exist_ok=True)
+    paths = [f'gda94/{os.path.basename(n)}' for n in names]
+    for n, p in zip(names, paths):
+        with zf.open(n) as src, open(os.path.join(sources.OUT, p), 'wb') as dst: shutil.copyfileobj(src, dst, 1 << 24)
+        assert os.path.getsize(os.path.join(sources.OUT, p)) == zf.getinfo(n).file_size, f'{layer}: short copy of {n}'
+    n = con.execute(f"SELECT count(*) FROM ST_Read('{os.path.join(sources.OUT, 'gda94', os.path.basename(gj[0]))}')").fetchone()[0]
+    return sorted(paths), n
+
+
 def bake(con, layer, z, tmp):
     o = lambda f: os.path.join(sources.OUT, f)
     member = [n for n in zipfile.ZipFile(z).namelist() if n.endswith('_GDA2020.geojson')]
@@ -128,16 +144,19 @@ def main():
         print(json.dumps({'unchanged': True, 'since': old['built']})); return        # no index.json: publish.py does nothing
     tmp = os.path.join(sources.DATA, 'tmp'); os.makedirs(tmp, exist_ok=True)
     con = duckdb.connect(os.path.join(tmp, 'bake.duckdb')); con.execute('INSTALL spatial; LOAD spatial')
-    counts = {}
+    counts, g94 = {}, {}
     for l in want:
-        t = datetime.datetime.now()
-        counts[l], counts[l + '_tiles_deepest_zoom'], counts[l + '_tiny_polygon_points'] = bake(con, l, download(l, srcs[l]), tmp)
+        t = datetime.datetime.now(); z = download(l, srcs[l])
+        counts[l], counts[l + '_tiles_deepest_zoom'], counts[l + '_tiny_polygon_points'] = bake(con, l, z, tmp)
+        g94[l], counts[l + '_gda94'] = gda94(con, l, z)
+        if counts[l + '_gda94'] != counts[l]:
+            print(f'::warning::{l}: GDA94 copy has {counts[l + "_gda94"]} features, GDA2020 {counts[l]}', flush=True)
         print(json.dumps({'layer': l, 'rows': counts[l], 'seconds': (datetime.datetime.now() - t).seconds,
                           'parquet_bytes': os.path.getsize(os.path.join(sources.OUT, l + '.parquet')),
                           'pmtiles_bytes': os.path.getsize(os.path.join(sources.OUT, l + '.pmtiles'))}), flush=True)
     con.close(); shutil.rmtree(tmp)
     idx = {'built': datetime.datetime.now().isoformat(timespec='seconds'), 'counts': counts, 'layers': want,
-           'sources': srcs, 'crs': 'EPSG:7844 (GDA2020)'}
+           'sources': srcs, 'crs': 'EPSG:7844 (GDA2020)', 'gda94': g94}
     json.dump(idx, open(os.path.join(sources.OUT, 'index.json'), 'w'), indent=1)
     print(json.dumps(idx))
 

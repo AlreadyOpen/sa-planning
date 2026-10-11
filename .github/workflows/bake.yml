@@ -1,11 +1,12 @@
-# Monthly: bake (bake.py) only when a source zip changed (Last-Modified or size differ from the published index.json), then
-# publish (publish.py) and mirror to Kaggle. The P&D Code is updated fortnightly upstream; a manual run with 'rebake' bakes now.
+# Weekly: bake (bake.py) only when a source zip changed (Last-Modified or size differ from the published index.json), then
+# publish (publish.py) and mirror to Kaggle (with each zip's GDA94 copy, kept on Kaggle only). The P&D Code is updated
+# fortnightly upstream; a manual run with 'rebake' bakes now.
 # The overlays zip is 1.04 GB (1.79 GB of GeoJSON inside); it is read in place through GDAL's /vsizip/, never unpacked.
 # Each run commits status/last-run.json: GitHub turns schedules off after 60 days with no commits.
 name: bake
 on:
   schedule:
-    - cron: '0 17 3 * *'           # the 3rd of each month, 17:00 UTC
+    - cron: '0 17 * * 3'           # Wednesdays 17:00 UTC
   workflow_dispatch:
     inputs:
       force:

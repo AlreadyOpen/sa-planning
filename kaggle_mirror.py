@@ -4,10 +4,11 @@ Kaggle's "Remote URL" cannot pull from Hugging Face (every HF download is a 302 
 never blocks Hugging Face. Needs KAGGLE_API_TOKEN in the environment (a repo secret; never on argv). The dataset is owned by
 Helen's account (helenkwok): a Kaggle group cannot own one. Description = hf/README.md without its YAML header; licence "other"
 (per-file terms are in the description).
-By default it mirrors EVERYTHING publish.py publishes (DATASET_FILES + BUCKET_FILES + manifest.json), keeping relative paths;
+By default it mirrors EVERYTHING publish.py publishes (DATASET_FILES + BUCKET_FILES + manifest.json, plus KAGGLE_FILES when
+publish.py has them: files kept on Kaggle only), keeping relative paths;
 a folder is uploaded as a zip that Kaggle unpacks again (Kaggle allows only 50 top-level files). Mirroring less is a narrowing:
 ask Helen first.
-Usage: python3 kaggle_mirror.py                                  (reads REPO, DATASET_FILES, BUCKET_FILES, KAGGLE from publish.py)
+Usage: python3 kaggle_mirror.py                                  (reads DATASET_FILES, BUCKET_FILES, KAGGLE[_FILES] from publish.py)
        python3 kaggle_mirror.py <owner/slug> "<title>" <root> <path>...  (paths relative to root)"""
 import json, os, re, subprocess, sys, tempfile
 
@@ -40,4 +41,4 @@ if __name__ == '__main__':
         mirror(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:])
     else:
         import publish, sources
-        mirror(*publish.KAGGLE, sources.OUT, sorted(set(publish.DATASET_FILES + publish.BUCKET_FILES + ['manifest.json'])))
+        mirror(*publish.KAGGLE, sources.OUT, sorted(set(publish.DATASET_FILES + publish.BUCKET_FILES + ['manifest.json'] + getattr(publish, 'KAGGLE_FILES', []))))
